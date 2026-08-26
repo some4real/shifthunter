@@ -9,6 +9,7 @@ charset-normalizer==3.5.1
 cryptography==50.0.1
 Django==5.2.6
 frozenlist==1.8.0
+gunicorn==26.2.0
 http_ece==1.2.1
 idna==3.19
 multidict==6.7.1
