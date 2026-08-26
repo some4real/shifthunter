@@ -1,3 +1,5 @@
+console.log('🔥 SHIFTHUNTER NEW DASHBOARD JS LOADED');
+
 const fallback = [
     {
         id: 'SH-88421',
@@ -75,14 +77,29 @@ function time(v) {
 function render() {
     const q = $('query').value.toLowerCase();
     const site = $('site').value;
+    const monitoring = preferences?.monitoring;
+
+const prioritySite =
+    monitoring?.priority_site?.trim().toLowerCase() || '';
+
+const secondarySites =
+    (monitoring?.secondary_sites || '')
+        .split(',')
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean);
+
+const allowedSites = [
+    prioritySite,
+    ...secondarySites
+].filter(Boolean);
 
     const rows = shifts.filter(
         s =>
             s.location.toLowerCase().includes(q) &&
             (site === 'All sites' || s.location === site) &&
+            s.status === 'unassigned' &&
             (!onlyAuto || s.autoassignable)
     );
-
     $('available').textContent = rows.length;
 
     $('primary').textContent =
@@ -128,7 +145,7 @@ function render() {
 
                 <div>
                     <i class="online"></i>
-                    ${s.status}
+                Available
                 </div>
             </article>
         `).join('')
@@ -140,6 +157,8 @@ function render() {
                 </small>
             </div>
         `;
+
+    renderMonitoringMatches();
 }
 
 async function refresh() {
@@ -201,6 +220,185 @@ async function refresh() {
     }
 }
 
+function matchesMonitoring(shift) {
+    const monitoring = preferences?.monitoring;
+
+    if (!monitoring?.enabled) {
+        return false;
+    }
+
+    const location = (shift.location || '').toLowerCase();
+
+    const prioritySite =
+        (monitoring.priority_site || '').trim().toLowerCase();
+
+    const secondarySites =
+        (monitoring.secondary_sites || '')
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+
+    const matchedPriority =
+        prioritySite &&
+        location.includes(prioritySite);
+
+    const matchedSecondary =
+        secondarySites.some(site =>
+            location.includes(site)
+        );
+
+    if (!matchedPriority && !matchedSecondary) {
+        return false;
+    }
+
+    if (shift.status !== 'unassigned') {
+        return false;
+    }
+
+    if (
+        monitoring.require_autoassignable &&
+        !shift.autoassignable
+    ) {
+        return false;
+    }
+    const start = new Date(shift.start);
+const end = new Date(shift.end);
+
+const localParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: monitoring.timezone || 'America/New_York',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+}).formatToParts(start);
+
+const parts = Object.fromEntries(
+    localParts.map(p => [p.type, p.value])
+);
+
+const weekdayMap = {
+    Mon: 0,
+    Tue: 1,
+    Wed: 2,
+    Thu: 3,
+    Fri: 4,
+    Sat: 5,
+    Sun: 6
+};
+
+const shiftWeekday = weekdayMap[parts.weekday];
+
+const shiftStartMinutes =
+    Number(parts.hour) * 60 +
+    Number(parts.minute);
+
+const configuredWeekday =
+    Number(monitoring.weekday);
+
+const [startHour, startMinute] =
+    (monitoring.start_time || '00:00')
+        .split(':')
+        .map(Number);
+
+const [endHour, endMinute] =
+    (monitoring.end_time || '23:59')
+        .split(':')
+        .map(Number);
+
+const windowStart =
+    startHour * 60 + startMinute;
+
+const windowEnd =
+    endHour * 60 + endMinute;
+
+if (shiftWeekday !== configuredWeekday) {
+    return false;
+}
+
+if (windowStart <= windowEnd) {
+    if (
+        shiftStartMinutes < windowStart ||
+        shiftStartMinutes > windowEnd
+    ) {
+        return false;
+    }
+} else {
+    // Overnight monitoring window.
+    if (
+        shiftStartMinutes < windowStart &&
+        shiftStartMinutes > windowEnd
+    ) {
+        return false;
+    }
+}
+
+    const minimumHours =
+        Number(monitoring.minimum_hours || 0);
+
+    const hours =
+        (end - start) / (1000 * 60 * 60);
+
+    if (hours < minimumHours) {
+        return false;
+    }
+
+    const minimumValue =
+        Number(monitoring.minimum_value || 0);
+
+    if (Number(shift.pay || 0) < minimumValue) {
+        return false;
+    }
+
+    return {
+        priority: Boolean(matchedPriority),
+        secondary: Boolean(matchedSecondary),
+        hours,
+    };
+}
+function renderMonitoringMatches() {
+    const box = $('monitorMatches');
+    const rows = $('monitorMatchRows');
+    const count = $('monitorMatchCount');
+
+    if (!preferences?.monitoring?.enabled) {
+        box.hidden = true;
+        return;
+    }
+
+    const matches = shifts
+        .filter(s => s.status === 'unassigned')
+        .map(shift => ({
+            shift,
+            match: matchesMonitoring(shift)
+        }))
+        .filter(item => item.match);
+
+    count.textContent = matches.length;
+
+    if (!matches.length) {
+        box.hidden = true;
+        return;
+    }
+
+    box.hidden = false;
+
+    rows.innerHTML = matches.map(({ shift, match }) => `
+        <div class="monitor-match">
+            <b class="${match.priority ? 'primary-match' : ''}">
+                ${match.priority ? '🚨 PRIMARY MATCH' : '● MONITORING MATCH'}
+                — ${shift.location}
+            </b>
+
+            <small>
+                ${shift.schedule}
+                · ${date(shift.start)}
+                · ${time(shift.start)} – ${time(shift.end)}
+                · ${match.hours.toFixed(1)} hrs
+                · $${Number(shift.pay || 0).toFixed(2)}
+            </small>
+        </div>
+    `).join('');
+}
 function fillSites() {
     const current = $('site').value;
 
@@ -405,17 +603,20 @@ async function saveSettings() {
     };
 
     try {
-        const response = await fetch(
-            '/api/preferences/update',
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            }
-        );
+        const csrfToken =
+    document.querySelector('[name=csrfmiddlewaretoken]')?.value;
 
+const response = await fetch(
+    '/api/preferences/update',
+    {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify(payload)
+    }
+);
         const data = await response.json();
 
         if (!response.ok) {
@@ -434,6 +635,9 @@ async function saveSettings() {
         showSettingsMessage(
             'Settings saved successfully.'
         );
+
+        await loadPreferences();
+        await refresh();
 
         setTimeout(closeSettings, 800);
 
@@ -508,6 +712,127 @@ $('settingsOverlay').onclick = event => {
 };
 
 
-fillSites();
-render();
-refresh();
+async function initializeDashboard() {
+    await loadPreferences();
+    fillSites();
+    render();
+    await refresh();
+}
+
+initializeDashboard();
+async function setupPushNotifications() {
+    if (!("serviceWorker" in navigator)) {
+        console.warn("Service workers are not supported.");
+        return;
+    }
+
+    if (!("PushManager" in window)) {
+        console.warn("Push notifications are not supported.");
+        return;
+    }
+
+    try {
+        const registration = await navigator.serviceWorker.register(
+            "/static/shifthunter/sw.js"
+        );
+
+        let permission = Notification.permission;
+
+        if (permission === "default") {
+            permission = await Notification.requestPermission();
+        }
+
+        if (permission !== "granted") {
+            console.warn("Notification permission was not granted.");
+            return;
+        }
+
+        const vapidPublicKey =
+            document
+                .querySelector('meta[name="vapid-public-key"]')
+                .getAttribute("content");
+
+        const existingSubscription =
+            await registration.pushManager.getSubscription();
+
+        const subscription =
+            existingSubscription ||
+            await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(
+                    vapidPublicKey
+                ),
+            });
+
+        const response = await fetch(
+            "/api/push/subscribe",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": getCookie("csrftoken"),
+                },
+                body: JSON.stringify(subscription),
+            }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                result.error || "Failed to save push subscription."
+            );
+        }
+
+        console.log(
+            "Push subscription registered:",
+            result
+        );
+    } catch (error) {
+        console.error(
+            "Push notification setup failed:",
+            error
+        );
+    }
+}
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat(
+        (4 - (base64String.length % 4)) % 4
+    );
+
+    const base64 = (
+        base64String + padding
+    )
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+
+    const rawData = window.atob(base64);
+
+    return Uint8Array.from(
+        [...rawData].map(
+            (char) => char.charCodeAt(0)
+        )
+    );
+}
+
+function getCookie(name) {
+    const cookies = document.cookie.split(";");
+
+    for (const cookie of cookies) {
+        const [key, value] = cookie.trim().split("=");
+
+        if (key === name) {
+            return decodeURIComponent(value);
+        }
+    }
+
+    return null;
+}
+
+document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+        setupPushNotifications();
+    }
+);
