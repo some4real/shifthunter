@@ -1,0 +1,74 @@
+import os
+from datetime import datetime, timezone
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+import json
+from django.http import JsonResponse
+from django.shortcuts import render
+
+
+def dashboard(request):
+    return render(request, 'shifthunter/dashboard.html')
+
+
+def _number(value):
+    try:
+        number = float(value)
+        return number if number == number and number not in (float('inf'), float('-inf')) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize(shift):
+    location = str(shift.get('bubo_contract_location_name') or shift.get('location') or 'Unknown location')
+    start = str(shift.get('start_timestamp') or shift.get('start') or shift.get('start_date') or '')
+    end = str(shift.get('end_timestamp') or shift.get('end') or shift.get('end_date') or '')
+    if start and len(start) == 10:
+        start = f'{start}T00:00:00Z'
+    if end and len(end) == 10:
+        end = f'{end}T08:00:00Z'
+    try:
+        hours = (datetime.fromisoformat(end.replace('Z', '+00:00')) - datetime.fromisoformat(start.replace('Z', '+00:00'))).total_seconds() / 3600
+    except (ValueError, TypeError):
+        hours = 0
+    primary = location.lower() == 'dhs - 151 east'
+    try:
+        weekday = datetime.fromisoformat(start.replace('Z', '+00:00')).weekday()
+    except (ValueError, TypeError):
+        weekday = -1
+    return {'id': str(shift.get('bubo_shift_id') or shift.get('id') or f'{location}-{start}'), 'location': location, 'start': start, 'end': end, 'schedule': str(shift.get('schedule_type') or shift.get('shift_type') or 'Unknown'), 'pay': _number(shift.get('estimated_total_pay')), 'distance': _number(shift.get('distance')), 'autoassignable': bool(shift.get('is_autoassignable')), 'status': str(shift.get('status') or 'Available'), 'priority': 'primary' if primary and (weekday == 2 or not start or hours == 8) else 'normal'}
+
+
+def shifts_api(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET required'}, status=405)
+    token = os.getenv('SHYFTR_TOKEN', '').strip()
+    endpoint = os.getenv('SHYFTR_SHIFT_ENDPOINT', 'https://api.bubo.io/shyftr/shift')
+    if not token:
+        return JsonResponse({'error': 'SHYFTR_TOKEN is not configured'}, status=503)
+    credential = token.removeprefix('Bearer ').removeprefix('bearer ')
+    try:
+        req = Request(endpoint, headers={'Authorization': f'Bearer {credential}', 'Accept': 'application/json, text/plain, */*'})
+        with urlopen(req, timeout=15) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+        if isinstance(payload, list):
+            raw = payload
+        elif isinstance(payload, dict):
+            # The live Shyftr response separates available and already-assigned shifts.
+            # Keep both collections so the dashboard can show the complete schedule.
+            raw = [
+                *payload.get('unassigned_shifts', []),
+                *payload.get('current_shifts', []),
+                *payload.get('available_shifts', []),
+            ]
+            if not raw:
+                raw = payload.get('shifts', payload.get('data', []))
+        else:
+            raw = []
+        shifts = [_normalize(item) for item in raw if isinstance(item, dict)]
+        return JsonResponse({'shifts': shifts, 'source': 'shyftr', 'checkedAt': datetime.now(timezone.utc).isoformat()})
+    except HTTPError as error:
+        message = 'Shyftr rejected SHYFTR_TOKEN. Store the token value only; the app adds Bearer automatically.' if error.code in (401, 403) else f'Shyftr returned {error.code}'
+        return JsonResponse({'error': message}, status=error.code)
+    except Exception:
+        return JsonResponse({'error': 'Unable to reach Shyftr. Check SHYFTR_SHIFT_ENDPOINT and network access.'}, status=502)

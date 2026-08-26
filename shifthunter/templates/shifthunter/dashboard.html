@@ -1,0 +1,609 @@
+{% load static %}
+{% csrf_token %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta
+    name="vapid-public-key"
+    content="{{ vapid_public_key }}"
+    >
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width,initial-scale=1"
+    >
+    <title>ShiftHunter · Operations console</title>
+
+    <link
+        rel="stylesheet"
+        href="{% static 'shifthunter/dashboard.css' %}"
+    >
+</head>
+
+<body>
+
+<header>
+    <div class="brand">
+        <div class="mark">✦</div>
+
+        <div>
+            <b>SHIFTHUNTER</b>
+            <span>OPERATIONS CONSOLE</span>
+        </div>
+    </div>
+
+    <div class="top">
+        <span id="connection">
+            <i></i>
+            Preview mode
+        </span>
+
+        <button
+            id="notifications"
+            aria-label="Notifications"
+        >
+            ♢
+        </button>
+
+        <strong>OO</strong>
+    </div>
+</header>
+
+
+<main>
+
+    <div class="intro">
+
+        <div>
+            <div class="eyebrow">
+                ◉ <span id="monitoringStatus">MONITORING ACTIVE</span>
+            </div>
+
+            <h1>Available shifts</h1>
+
+            <p>
+                Live visibility into shifts that match your
+                preferences. Priority matches rise to the top
+                automatically.
+            </p>
+        </div>
+
+        <div class="intro-actions">
+
+            <button
+                id="refresh"
+                class="primary"
+            >
+                ↻
+                <span>Refresh shifts</span>
+            </button>
+
+            <button
+                id="settings"
+                class="secondary"
+            >
+                ⚙ Settings
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <div class="metrics">
+
+        <div>
+            <label>Available now</label>
+            <strong id="available">0</strong>
+            <small>unassigned shifts</small>
+        </div>
+
+        <div>
+            <label>Primary matches</label>
+            <strong id="primary">0</strong>
+            <small>priority site</small>
+        </div>
+
+        <div>
+            <label>Potential pay</label>
+            <strong id="pay">$0.00</strong>
+            <small>across visible shifts</small>
+        </div>
+
+        <div>
+            <label>Last API check</label>
+            <strong id="checked">Checking…</strong>
+            <small id="detail">
+                waiting for response
+            </small>
+        </div>
+
+    </div>
+
+
+    <div
+        id="error"
+        class="error"
+        hidden
+    ></div>
+    <div
+    id="monitorMatches"
+    class="monitor-matches"
+    hidden
+>
+    <div class="monitor-matches-header">
+        <strong>Monitoring matches</strong>
+        <span id="monitorMatchCount">0</span>
+    </div>
+
+    <div id="monitorMatchRows"></div>
+</div>
+
+
+    <section>
+
+        <div class="toolbar">
+
+            <label class="search">
+                ⌕
+                <input
+                    id="query"
+                    placeholder="Search locations"
+                    aria-label="Search locations"
+                >
+            </label>
+
+            <select
+                id="site"
+                aria-label="Filter by site"
+            >
+                <option>All sites</option>
+            </select>
+
+            <button id="auto">
+                ▣ Autoassignable
+            </button>
+
+            <button
+                id="settingsToolbar"
+                aria-label="View settings"
+            >
+                ☷
+            </button>
+
+        </div>
+
+
+        <div class="columns">
+            <span>Location</span>
+            <span>Schedule</span>
+            <span>Window</span>
+            <span>Distance</span>
+            <span>Est. pay</span>
+            <span>Status</span>
+        </div>
+
+
+        <div id="rows"></div>
+
+
+        <footer>
+            <span>
+                Read-only monitoring ·
+                No schedule changes are made
+            </span>
+
+            <span>
+                Times shown in Eastern Time
+            </span>
+        </footer>
+
+    </section>
+
+</main>
+
+
+<!-- SETTINGS DRAWER -->
+
+<div
+    id="settingsOverlay"
+    class="settings-overlay"
+    hidden
+>
+
+    <aside
+        class="settings-panel"
+        aria-label="ShiftHunter settings"
+    >
+
+        <div class="settings-header">
+
+            <div>
+                <div class="eyebrow">
+                    CONFIGURATION
+                </div>
+
+                <h2>Settings</h2>
+            </div>
+
+            <button
+                id="closeSettings"
+                aria-label="Close settings"
+            >
+                ×
+            </button>
+
+        </div>
+
+
+        <!-- MONITORING -->
+
+        <section class="settings-section">
+
+            <div class="settings-section-title">
+                <div>
+                    <strong>Monitoring</strong>
+                    <small>
+                        Which shifts should be monitored?
+                    </small>
+                </div>
+
+                <label class="switch">
+                    <input
+                        type="checkbox"
+                        id="monitoringEnabled"
+                    >
+                    <span></span>
+                </label>
+            </div>
+
+
+            <label>
+                Priority site
+
+                <input
+                    id="prioritySite"
+                    type="text"
+                    placeholder="151 East"
+                >
+            </label>
+
+
+            <label>
+                Secondary sites
+
+                <input
+                    id="secondarySites"
+                    type="text"
+                    placeholder="4380 Bronx, ..."
+                >
+
+                <small>
+                    Separate multiple sites with commas.
+                </small>
+            </label>
+
+
+            <div class="form-grid">
+
+                <label>
+                    Day
+
+                    <select id="weekday">
+
+                        <option value="0">
+                            Monday
+                        </option>
+
+                        <option value="1">
+                            Tuesday
+                        </option>
+
+                        <option value="2">
+                            Wednesday
+                        </option>
+
+                        <option value="3">
+                            Thursday
+                        </option>
+
+                        <option value="4">
+                            Friday
+                        </option>
+
+                        <option value="5">
+                            Saturday
+                        </option>
+
+                        <option value="6">
+                            Sunday
+                        </option>
+
+                    </select>
+                </label>
+
+
+                <label>
+                    Timezone
+
+                    <input
+                        value="America/New_York"
+                        disabled
+                    >
+                </label>
+
+            </div>
+
+
+            <div class="form-grid">
+
+                <label>
+                    Start
+
+                    <input
+                        id="startTime"
+                        type="time"
+                    >
+                </label>
+
+                <label>
+                    End
+
+                    <input
+                        id="endTime"
+                        type="time"
+                    >
+                </label>
+
+            </div>
+
+
+            <div class="form-grid">
+
+                <label>
+                    Minimum hours
+
+                    <input
+                        id="minimumHours"
+                        type="number"
+                        min="0"
+                        step="0.5"
+                    >
+                </label>
+
+                <label>
+                    Minimum pay
+
+                    <input
+                        id="minimumValue"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                    >
+                </label>
+
+            </div>
+
+
+            <label class="checkbox-row">
+
+                <input
+                    id="requireAutoassignable"
+                    type="checkbox"
+                >
+
+                <span>
+                    Require autoassignable shifts
+                </span>
+
+            </label>
+
+        </section>
+
+
+        <!-- NOTIFICATIONS -->
+
+        <section class="settings-section">
+
+            <div class="settings-section-title">
+                <div>
+                    <strong>Notifications</strong>
+                    <small>
+                        How should matches reach you?
+                    </small>
+                </div>
+            </div>
+
+
+            <label class="checkbox-row">
+
+                <input
+                    id="pushEnabled"
+                    type="checkbox"
+                >
+
+                <span>
+                    Browser push notifications
+                </span>
+
+            </label>
+
+
+            <label class="checkbox-row">
+
+                <input
+                    id="emailEnabled"
+                    type="checkbox"
+                >
+
+                <span>
+                    Email notifications
+                </span>
+
+            </label>
+
+
+            <label>
+                Notification email
+
+                <input
+                    id="emailAddress"
+                    type="email"
+                    placeholder="you@example.com"
+                >
+            </label>
+
+        </section>
+
+
+        <!-- AUTO PICK -->
+
+        <section class="settings-section autopick-section">
+
+            <div class="settings-section-title">
+
+                <div>
+                    <strong>Auto-Pick</strong>
+
+                    <small>
+                        Automatically claim qualifying shifts
+                        when the claim endpoint is available.
+                    </small>
+                </div>
+
+                <label class="switch">
+
+                    <input
+                        type="checkbox"
+                        id="autoPickEnabled"
+                    >
+
+                    <span></span>
+
+                </label>
+
+            </div>
+
+
+            <div
+                id="autoPickWarning"
+                class="settings-warning"
+            >
+                ⚠ Auto-Pick is configured but the Shyftr
+                claim endpoint has not been connected yet.
+                No shift will be claimed.
+            </div>
+
+
+            <label>
+                Shift type
+
+                <select id="autoPickShiftType">
+
+                    <option value="">
+                        Any shift type
+                    </option>
+
+                    <option value="Grave">
+                        Grave
+                    </option>
+
+                    <option value="Day">
+                        Day
+                    </option>
+
+                    <option value="Evening">
+                        Evening
+                    </option>
+
+                </select>
+
+            </label>
+
+
+            <div class="form-grid">
+
+                <label>
+                    Minimum hours
+
+                    <input
+                        id="autoPickMinimumHours"
+                        type="number"
+                        min="0"
+                        step="0.5"
+                    >
+                </label>
+
+                <label>
+                    Minimum pay
+
+                    <input
+                        id="autoPickMinimumValue"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                    >
+                </label>
+
+            </div>
+
+
+            <label class="checkbox-row">
+
+                <input
+                    id="autoPickRequireAutoassignable"
+                    type="checkbox"
+                >
+
+                <span>
+                    Require autoassignable
+                </span>
+
+            </label>
+
+
+            <div
+                id="autoPickStatus"
+                class="autopick-status"
+            >
+                Claim endpoint:
+                <strong>Not configured</strong>
+            </div>
+
+        </section>
+
+
+        <div
+            id="settingsMessage"
+            class="settings-message"
+            hidden
+        ></div>
+
+
+        <div class="settings-actions">
+
+            <button
+                id="cancelSettings"
+                class="secondary"
+            >
+                Cancel
+            </button>
+
+            <button
+                id="saveSettings"
+                class="primary"
+            >
+                Save settings
+            </button>
+
+        </div>
+
+    </aside>
+
+</div>
+
+
+<script src="{% static 'shifthunter/dashboard.js' %}"></script>
+
+</body>
+</html>
