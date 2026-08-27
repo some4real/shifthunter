@@ -27,6 +27,14 @@ for env_file in (BASE_DIR / '.env.development.local', BASE_DIR / '.env.local', B
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-only-shifthunter-secret-key')
 DEBUG = os.getenv('DJANGO_DEBUG', '1') == '1'
 ALLOWED_HOSTS = [host for host in os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',') if host]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "DJANGO_CSRF_TRUSTED_ORIGINS",
+        "https://shifthunter-env.up.railway.app",
+    ).split(",")
+    if origin.strip()
+]
 INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'shifthunter',
