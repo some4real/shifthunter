@@ -49,8 +49,14 @@ MIDDLEWARE = [
 TEMPLATES = [{'BACKEND': 'django.template.backends.django.DjangoTemplates', 'DIRS': [BASE_DIR / 'shifthunter' / 'templates'], 'APP_DIRS': True, 'OPTIONS': {'context_processors': ['django.template.context_processors.request']}}]
 WSGI_APPLICATION = 'shifthunter_project.wsgi.application'
 ASGI_APPLICATION = 'shifthunter_project.asgi.application'
-DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': BASE_DIR / 'db.sqlite3'}}
-LANGUAGE_CODE = 'en-us'
+import dj_database_url
+
+DATABASES = {
+    "default": dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        conn_max_age=600,
+    )
+}
 TIME_ZONE = 'America/New_York'
 USE_I18N = True
 USE_TZ = True
