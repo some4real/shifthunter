@@ -5,7 +5,7 @@
   "scripts": {
     "dev": ".venv/bin/python manage.py runserver 0.0.0.0:3000",
     "build": ".venv/bin/python manage.py collectstatic --noinput",
-    "start": ".venv/bin/python manage.py runserver 0.0.0.0:3000"
+    "start": ".venv/bin/gunicorn shifthunter_project.wsgi:application --bind 0.0.0.0:$PORT"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
