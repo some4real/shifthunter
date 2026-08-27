@@ -7,6 +7,7 @@ from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from .services.shyftr import ShyftrClient, ShyftrError
 
 from .models import AutoPickSettings, Shift, UserPreference
 from django.views.decorators.csrf import csrf_exempt
@@ -334,82 +335,16 @@ def _normalize(shift):
 
 @require_http_methods(["GET"])
 def shifts_api(request):
-    token = os.getenv("SHYFTR_TOKEN", "").strip()
-
-    endpoint = os.getenv(
-        "SHYFTR_SHIFT_ENDPOINT",
-        "https://api.bubo.io/shyftr/shift",
-    )
-
-    if not token:
-        return JsonResponse(
-            {
-                "error": (
-                    "SHYFTR_TOKEN is not configured"
-                )
-            },
-            status=503,
-        )
-
-    credential = (
-        token.removeprefix("Bearer ")
-        .removeprefix("bearer ")
-    )
-
     try:
-        req = Request(
-            endpoint,
-            headers={
-                "Authorization": f"Bearer {credential}",
-                "Accept": (
-                    "application/json, "
-                    "text/plain, */*"
-                ),
-            },
-        )
-
-        with urlopen(req, timeout=15) as response:
-            payload = json.loads(
-                response.read().decode("utf-8")
-            )
-
-        if isinstance(payload, list):
-            raw = payload
-
-        elif isinstance(payload, dict):
-            raw = [
-                *payload.get(
-                    "unassigned_shifts",
-                    [],
-                ),
-                *payload.get(
-                    "current_shifts",
-                    [],
-                ),
-                *payload.get(
-                    "available_shifts",
-                    [],
-                ),
-            ]
-
-            if not raw:
-                raw = payload.get(
-                    "shifts",
-                    payload.get("data", []),
-                )
-
-        else:
-            raw = []
-
-        shifts = [
-            _normalize(item)
-            for item in raw
-            if isinstance(item, dict)
-        ]
+        shifts = ShyftrClient().fetch_shifts()
 
         return JsonResponse(
             {
-                "shifts": shifts,
+                "shifts": [
+                    _normalize(item)
+                    for item in shifts
+                    if isinstance(item, dict)
+                ],
                 "source": "shyftr",
                 "checkedAt": datetime.now(
                     timezone.utc
@@ -417,34 +352,11 @@ def shifts_api(request):
             }
         )
 
-    except HTTPError as error:
-        message = (
-            "Shyftr rejected SHYFTR_TOKEN."
-            if error.code in (401, 403)
-            else f"Shyftr returned {error.code}"
-        )
-
+    except ShyftrError as error:
         return JsonResponse(
-            {"error": message},
-            status=error.code,
+            {"error": str(error)},
+            status=503,
         )
-
-    except Exception:
-        return JsonResponse(
-            {
-                "error": (
-                    "Unable to reach Shyftr. "
-                    "Check SHYFTR_SHIFT_ENDPOINT "
-                    "and network access."
-                )
-            },
-            status=502,
-        )
-
-from django.views.decorators.http import require_http_methods
-from .models import UserPreference, AutoPickSettings
-
-
 def _get_preferences():
     preference = UserPreference.objects.first()
 

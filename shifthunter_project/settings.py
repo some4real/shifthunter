@@ -1,6 +1,14 @@
 from pathlib import Path
 import os
 
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
+
+load_dotenv()
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Django is started directly in the preview, so load the project env file without

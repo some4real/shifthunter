@@ -1,8 +1,14 @@
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+
+_TOKEN_LOCK = threading.Lock()
+_TOKEN_CACHE = {"access": "", "refresh": ""}
 
 
 class ShyftrError(Exception):
@@ -10,37 +16,179 @@ class ShyftrError(Exception):
 
 
 class ShyftrClient:
+    CLIENT_ID = "5a1kunab6mms590v4eh4fslj5i"
+    TOKEN_ENDPOINT = "https://api.bubo.io/auth/token"
+
+    @staticmethod
+    def _read_env(*names, default=""):
+        for name in names:
+            value = os.getenv(name)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return default
+
     def __init__(self):
-        self.token = os.getenv("SHYFTR_TOKEN", "").strip()
+        # Refresh tokens are often rotated. Keep the newest pair in memory so a
+        # new request does not keep reusing the now-invalid token from .env.
+        with _TOKEN_LOCK:
+            self.token = _TOKEN_CACHE["access"] or self._read_env(
+                "SHYFTR_ACCESS_TOKEN",
+            )
+            self.refresh_token = _TOKEN_CACHE["refresh"] or self._read_env(
+                "SHYFTR_REFRESH_TOKEN",
+                "SHYFTR_REFRESH",
+            )
+
         self.endpoint = os.getenv(
             "SHYFTR_SHIFT_ENDPOINT",
             "https://api.bubo.io/shyftr/shift",
         )
-        self.timeout = int(os.getenv("SHYFTR_TIMEOUT", "15"))
+
+        self.timeout = int(
+            os.getenv("SHYFTR_TIMEOUT", "15")
+        )
+
+    def refresh_access_token(self):
+        if not self.refresh_token:
+            raise ShyftrError(
+                "SHYFTR_REFRESH_TOKEN is not configured."
+            )
+
+        body = json.dumps(
+            {
+                "grant_type": "refresh_token",
+                "client_id": self.CLIENT_ID,
+                "refresh_token": self.refresh_token,
+            }
+        ).encode("utf-8")
+
+        request = Request(
+            self.TOKEN_ENDPOINT,
+            data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://shyftr.bubo.io",
+            "Referer": "https://shyftr.bubo.io/",
+        },
+            method="POST",
+        )
+
+        try:
+            with urlopen(
+                request,
+                timeout=self.timeout,
+            ) as response:
+                payload = json.loads(
+                    response.read().decode("utf-8")
+                )
+
+        except HTTPError as error:
+            error_body = error.read().decode(
+                "utf-8",
+                errors="replace",
+            )
+
+            raise ShyftrError(
+                f"Shyftr token refresh failed "
+                f"(HTTP {error.code}): {error_body}"
+            ) from error
+
+        except URLError as error:
+            raise ShyftrError(
+                "Unable to reach Shyftr authentication service."
+            ) from error
+
+        except json.JSONDecodeError as error:
+            raise ShyftrError(
+                "Shyftr authentication returned invalid JSON."
+            ) from error
+
+        # The API has returned both PascalCase and OAuth-standard snake_case
+        # fields across versions.
+        access_token = str(
+            payload.get("AccessToken")
+            or payload.get("access_token")
+            or payload.get("token")
+            or ""
+        ).strip()
+
+        new_refresh_token = str(
+            payload.get("RefreshToken")
+            or payload.get("refresh_token")
+            or ""
+        ).strip()
+
+        if not access_token:
+            raise ShyftrError(
+                "Shyftr authentication did not return "
+                "an AccessToken."
+            )
+
+        self.token = access_token
+
+        if new_refresh_token:
+            self.refresh_token = new_refresh_token
+
+        with _TOKEN_LOCK:
+            _TOKEN_CACHE["access"] = self.token
+            _TOKEN_CACHE["refresh"] = self.refresh_token
+
+        return payload
 
     def fetch_shifts(self):
         if not self.token:
-            raise ShyftrError("SHYFTR_TOKEN is not configured.")
+            if self.refresh_token:
+                self.refresh_access_token()
+            else:
+                raise ShyftrError(
+                    "SHYFTR_TOKEN is not configured."
+                )
 
-        credential = self.token.removeprefix("Bearer ").removeprefix("bearer ")
+        try:
+            return self._request_shifts()
+
+        except ShyftrError as error:
+            if "401" not in str(error) and "403" not in str(error):
+                raise
+
+            if not self.refresh_token:
+                raise
+
+            self.refresh_access_token()
+            return self._request_shifts()
+
+    def _request_shifts(self):
+        credential = (
+            self.token
+            .removeprefix("Bearer ")
+            .removeprefix("bearer ")
+        )
 
         request = Request(
             self.endpoint,
             headers={
                 "Authorization": f"Bearer {credential}",
-                "Accept": "application/json, text/plain, */*",
+                "Accept": (
+                    "application/json, "
+                    "text/plain, */*"
+                ),
             },
         )
 
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with urlopen(
+                request,
+                timeout=self.timeout,
+            ) as response:
                 payload = json.loads(
                     response.read().decode("utf-8")
                 )
+
         except HTTPError as error:
             if error.code in (401, 403):
                 raise ShyftrError(
-                    "Shyftr rejected the configured token."
+                    f"Shyftr returned {error.code}."
                 ) from error
 
             raise ShyftrError(
@@ -114,7 +262,6 @@ class ShyftrClient:
                 ]
 
         return []
-
 
 def parse_datetime(value):
     if not value:
