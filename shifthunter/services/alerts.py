@@ -1,6 +1,6 @@
 import os
 
-from django.core.mail import send_mail
+import resend
 from django.utils import timezone
 from pywebpush import webpush, WebPushException
 
@@ -107,10 +107,6 @@ def send_push_alert(delivery):
 
 
 def send_email_alert(delivery):
-    preference = delivery.shift
-
-    # The delivery record itself does not contain the email address,
-    # so import the preference here.
     from shifthunter.models import UserPreference
 
     user_preference = UserPreference.objects.first()
@@ -127,11 +123,19 @@ def send_email_alert(delivery):
         delivery.save(update_fields=["status", "error_message", "sent_at"])
         return False
 
+    api_key = os.getenv("RESEND_API_KEY", "").strip()
+    from_email = os.getenv("EMAIL_FROM", "onboarding@resend.dev").strip()
+
+    if not api_key:
+        delivery.status = AlertDelivery.STATUS_FAILED
+        delivery.error_message = "RESEND_API_KEY is not configured."
+        delivery.sent_at = timezone.now()
+        delivery.save(update_fields=["status", "error_message", "sent_at"])
+        return False
+
     shift = delivery.shift
 
-    subject = (
-        f"Shyftr shift available — {shift.site}"
-    )
+    subject = f"Shyftr shift available — {shift.site}"
 
     body = (
         "A monitored Shyftr shift is available.\n\n"
@@ -140,18 +144,14 @@ def send_email_alert(delivery):
     )
 
     try:
-        send_mail(
-            subject=subject,
-            message=body,
-            from_email=os.getenv(
-                "DEFAULT_FROM_EMAIL",
-                user_preference.email_address,
-            ),
-            recipient_list=[
-                user_preference.email_address,
-            ],
-            fail_silently=False,
-        )
+        resend.api_key = api_key
+
+        resend.Emails.send({
+            "from": from_email,
+            "to": [user_preference.email_address],
+            "subject": subject,
+            "text": body,
+        })
 
         delivery.status = AlertDelivery.STATUS_SENT
         delivery.sent_at = timezone.now()
