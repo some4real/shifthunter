@@ -1,57 +1,6 @@
 console.log('🔥 SHIFTHUNTER NEW DASHBOARD JS LOADED');
 
-const fallback = [
-    {
-        id: 'SH-88421',
-        location: 'DHS - 151 East',
-        start: '2026-09-09T04:00:00Z',
-        end: '2026-09-09T12:00:00Z',
-        schedule: 'Grave',
-        pay: 141.53,
-        distance: 2.4,
-        autoassignable: true,
-        status: 'available',
-        priority: 'primary'
-    },
-    {
-        id: 'SH-88437',
-        location: 'DHS - 4380 Bronx',
-        start: '2026-09-09T04:00:00Z',
-        end: '2026-09-09T12:00:00Z',
-        schedule: 'Grave',
-        pay: 141.53,
-        distance: 8.7,
-        autoassignable: true,
-        status: 'available',
-        priority: 'normal'
-    },
-    {
-        id: 'SH-88452',
-        location: 'DHS - 151 East',
-        start: '2026-09-16T04:00:00Z',
-        end: '2026-09-16T12:00:00Z',
-        schedule: 'Grave',
-        pay: 141.53,
-        distance: 2.4,
-        autoassignable: false,
-        status: 'available',
-        priority: 'primary'
-    },
-    {
-        id: 'SH-88466',
-        location: 'DHS - 281 Park',
-        start: '2026-09-10T12:00:00Z',
-        end: '2026-09-10T20:00:00Z',
-        schedule: 'Day',
-        pay: 134.20,
-        distance: 5.1,
-        autoassignable: true,
-        status: 'available',
-        priority: 'normal'
-    }
-];
-
-let shifts = fallback;
+let shifts = [];
 let onlyAuto = false;
 let preferences = null;
 
@@ -190,17 +139,17 @@ async function refresh() {
 
     } catch (e) {
 
-        shifts = fallback;
+        shifts = [];
 
         $('connection').innerHTML =
-            '<i></i> Preview mode';
+            '<i></i> Shyftr unavailable';
 
         $('error').hidden = false;
 
         $('error').textContent =
-            'Live API unavailable. Showing the latest preview data.';
+            'Unable to load shifts from Shyftr.';
 
-        $('detail').textContent = 'fallback data';
+        $('detail').textContent = 'No live shift data';
 
     } finally {
 
