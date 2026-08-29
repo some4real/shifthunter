@@ -138,25 +138,21 @@ class ShyftrClient:
 
     def fetch_shifts(self):
         if not self.token:
-            if self.refresh_token:
-                self.refresh_access_token()
-            else:
-                raise ShyftrError(
-                    "SHYFTR_TOKEN is not configured."
-                )
+            raise ShyftrError(
+                "SHYFTR_ACCESS_TOKEN is not configured."
+            )
 
         try:
             return self._request_shifts()
 
         except ShyftrError as error:
-            if "401" not in str(error) and "403" not in str(error):
-                raise
+            if "401" in str(error) or "403" in str(error):
+                raise ShyftrError(
+                    "Shyftr access token has expired or is no longer valid. "
+                    "Update SHYFTR_ACCESS_TOKEN."
+                ) from error
 
-            if not self.refresh_token:
-                raise
-
-            self.refresh_access_token()
-            return self._request_shifts()
+            raise
 
     def _request_shifts(self):
         credential = (
@@ -173,6 +169,7 @@ class ShyftrClient:
                     "application/json, "
                     "text/plain, */*"
                 ),
+                "User-Agent": "Mozilla/5.0",
             },
         )
 

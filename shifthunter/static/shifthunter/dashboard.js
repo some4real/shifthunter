@@ -10,7 +10,7 @@ const fallback = [
         pay: 141.53,
         distance: 2.4,
         autoassignable: true,
-        status: 'Available',
+        status: 'available',
         priority: 'primary'
     },
     {
@@ -22,7 +22,7 @@ const fallback = [
         pay: 141.53,
         distance: 8.7,
         autoassignable: true,
-        status: 'Available',
+        status: 'available',
         priority: 'normal'
     },
     {
@@ -34,7 +34,7 @@ const fallback = [
         pay: 141.53,
         distance: 2.4,
         autoassignable: false,
-        status: 'Available',
+        status: 'available',
         priority: 'primary'
     },
     {
@@ -46,7 +46,7 @@ const fallback = [
         pay: 134.20,
         distance: 5.1,
         autoassignable: true,
-        status: 'Available',
+        status: 'available',
         priority: 'normal'
     }
 ];
@@ -97,7 +97,7 @@ const allowedSites = [
         s =>
             s.location.toLowerCase().includes(q) &&
             (site === 'All sites' || s.location === site) &&
-            s.status === 'unassigned' &&
+            s.status !== 'clocked_out' &&
             (!onlyAuto || s.autoassignable)
     );
     $('available').textContent = rows.length;
@@ -251,7 +251,7 @@ function matchesMonitoring(shift) {
         return false;
     }
 
-    if (shift.status !== 'unassigned') {
+    if (shift.status === 'clocked_out') {
         return false;
     }
 
@@ -366,7 +366,7 @@ function renderMonitoringMatches() {
     }
 
     const matches = shifts
-        .filter(s => s.status === 'unassigned')
+        .filter(s => s.status !== 'clocked_out')
         .map(shift => ({
             shift,
             match: matchesMonitoring(shift)

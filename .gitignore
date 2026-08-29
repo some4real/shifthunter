@@ -26,3 +26,6 @@ db.sqlite3
 
 # Local runtime logs
 *.log
+
+# Environment / secrets
+.env
